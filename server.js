@@ -1,62 +1,86 @@
 const express = require("express");
-const path = require("path");
 const fs = require("fs");
+const path = require("path");
+var notes = require(path.join(__dirname, "/db/db.json"));
+const { nanoid } = require("nanoid");
+
+const PORT = process.env.PORT || 3001;
 
 const app = express();
-const port = 8080;
-const mainDir = path.join(__dirname, "/public");
 
-app.use(express.static('public'));
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.static("public"));
 
-app.get("/notes", function(req, res) {
-    res.sendFile(path.join(mainDir, "notes.html"));
+function validateNote(note) {
+    if (!note.title || typeof note.title !== "string") {
+        return false;
+    }
+    if (!note.text || typeof note.title !== "string") {
+        return false;
+    }
+    return true;
+}
+
+function createNote(body, noteArray) {
+    noteArray.push(body);
+    fs.writeFileSync(
+        path.join(__dirname, "./db/db.json"),
+        JSON.stringify(noteArray, null, 2)
+    );
+
+    return body;
+}
+
+app.get("/notes", (req, res) => {
+    res.sendFile(path.join(__dirname, "/public/notes.html"));
 });
 
-app.get("/api/notes", function(req, res) {
-    res.sendFile(path.join(__dirname, "/db/db.json"));
+app.get("/api/notes", (req, res) => {
+    res.json(notes);
 });
 
-app.get("/api/notes/:id", function(req, res) {
-    let savedNotes = JSON.parse(fs.readFileSync("./db/db.json", "utf8"));
-    res.json(savedNotes[Number(req.params.id)]);
-});
+app.post("/api/notes", (req, res) => {
+    req.body.id = nanoid(7);
 
-app.get("*", function(req, res) {
-    res.sendFile(path.join(mainDir, "index.html"));
-});
-
-app.post("/api/notes", function(req, res) {
-    let savedNotes = JSON.parse(fs.readFileSync("./db/db.json", "utf8"));
-    let newNote = req.body;
-    let uniqueID = (savedNotes.length).toString();
-    newNote.id = uniqueID;
-    savedNotes.push(newNote);
-
-    fs.writeFileSync("./db/db.json", JSON.stringify(savedNotes));
-    console.log("Note saved to db.json. Content: ", newNote);
-    res.json(savedNotes);
+    if (!validateNote(req.body)) {
+        res.status(400).send("Please include a title and text in your note.");
+    } else {
+        const note = createNote(req.body, notes);
+        res.json(note);
+    }
 })
 
-app.delete("/api/notes/:id", function(req, res) {
-    let savedNotes = JSON.parse(fs.readFileSync("./db/db.json", "utf8"));
-    let noteID = req.params.id;
-    let newID = 0;
-    console.log(`Deleting note with ID ${noteID}`);
-    savedNotes = savedNotes.filter(currNote => {
-        return currNote.id != noteID;
-    })
-    
-    for (currNote of savedNotes) {
-        currNote.id = newID.toString();
-        newID++;
+app.delete("/api/notes/:id", (req, res) => {
+    var tempArray = [];
+    var idMatched = false;
+
+    notes.forEach(note => {
+        if (req.params.id === note.id) {
+            idMatched = true;
+        } else if (req.params.id !== note.id) {
+            tempArray.push(note);
+        }
+    });
+
+    if (!idMatched) {
+        res.status(400).send("Note could not be found.");
     }
 
-    fs.writeFileSync("./db/db.json", JSON.stringify(savedNotes));
-    res.json(savedNotes);
+    notes = tempArray;
+
+    fs.writeFileSync(
+        path.join(__dirname, "./db/db.json"),
+        JSON.stringify(notes, null, 2)
+    );
+
+    res.json(notes);
 })
 
-app.listen(port, function() {
-    console.log(`Now listening to port ${port}. Enjoy your stay!`);
-})
+app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "/public/index.html"));
+});
+
+app.listen(PORT, () => {
+    console.log(`Server active on port ${PORT}`);
+});
